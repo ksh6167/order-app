@@ -23,3 +23,268 @@
 - 기본적인 웹 기술만 사용
 - 학습 목적이므로 사용자 인증이나 결제 기능은 제외
 - 메뉴는 커피 메뉴만 있음
+
+## 4. 화면 사양
+
+### 4.1 주문하기 화면(PRD)
+
+- **목표**: 사용자가 메뉴를 탐색하고 옵션을 선택해 장바구니에 담은 뒤 주문을 생성할 수 있게 한다.
+- **대상 사용자**: 매장 내 키오스크/태블릿 사용자, 웹 브라우저 사용자.
+- **성공 정의**: 장바구니에 1개 이상 항목이 담기고, 총액이 정확히 계산되며, 주문 생성 요청이 성공한다.
+
+#### 4.1.1 레이아웃(와이어프레임 기준)
+- **헤더 바**
+  - 좌측: 브랜드 텍스트 `COZY`
+  - 우측: 네비 버튼 `주문하기`(현재 페이지 강조), `관리자`
+  - 헤더는 상단 고정(sticky) 아님(기본 스크롤). 향후 필요 시 고정 가능.
+- **메뉴 그리드**
+  - 3열 카드 그리드(데스크톱 기준). 카드 폭은 그리드에 맞춤, 카드간 간격 24px.
+  - 각 카드 구성: 이미지 영역(placeholder 가능), 메뉴명, 가격, 간단 설명, 옵션 체크박스, `담기` 버튼.
+- **장바구니 패널**
+  - 페이지 하단에 고정된 카드 형태의 영역.
+  - 좌측: 장바구니 항목 리스트(메뉴명, 옵션 표시, 수량 `x n`).
+  - 우측: 총 금액, `주문하기` 버튼.
+
+#### 4.1.2 컴포넌트 사양
+- **메뉴 카드(MenuCard)**
+  - 데이터: `id`, `name`, `price`, `description`, `imageUrl`, `options[]`.
+  - 옵션(예시): `샷 추가(+500원)`, `시럽 추가(+0원)` → 체크박스 UI.
+  - 상호작용:
+    - 체크박스 선택/해제 시 카드 내부 상태로만 유지.
+    - `담기` 클릭 시 현재 선택 옵션을 포함한 항목이 장바구니에 1개 추가.
+    - 동일 메뉴 + 동일 옵션 조합일 경우 기존 라인과 병합되어 수량 +1.
+- **장바구니(CartPanel)**
+  - 항목 라인 표시: `메뉴명 (옵션 요약)` + `x 수량` + 라인금액.
+  - 조작: 각 항목 `삭제` 아이콘 제공(수량 1인 항목 삭제, 수량 N은 라인 삭제로 단순화; 수량 증감은 MVP에서 제외, 동일 항목 재담기로 증가).
+  - 하단 합계 영역: `총 금액` 표시, `주문하기` 버튼.
+  - 비어 있을 때: 빈 상태 메시지(`장바구니가 비어 있습니다`)와 비활성화된 `주문하기` 버튼.
+
+#### 4.1.3 동작/로직
+- **가격 계산**
+  - `itemUnitPrice = basePrice + Σ(option.priceDelta)`
+  - `lineTotal = itemUnitPrice * quantity`
+  - `cartTotal = Σ(lineTotal)`
+  - 통화 표기: 천단위 구분 + `원` 접미사(예: `12,500원`).
+- **담기 규칙**
+  - 담기 시 토스트/스낵바로 피드백 제공(`담겼습니다`).
+  - 카드의 체크박스는 담기 후 초기화.
+- **주문 버튼 상태**
+  - 장바구니가 비어 있으면 비활성화.
+  - 요청 진행 중에는 로딩 스피너와 함께 비활성화.
+- **에러 처리**
+  - 네트워크/서버 에러 시 토스트로 안내(`주문 생성에 실패했습니다. 다시 시도해 주세요`).
+
+#### 4.1.4 API 계약(초안)
+- 메뉴 조회
+  - Method/Path: `GET /api/menu`
+  - Response(예시)
+    ```json
+    {
+      "items": [
+        {
+          "id": "americano-ice",
+          "name": "아메리카노(ICE)",
+          "price": 4000,
+          "description": "간단한 설명...",
+          "imageUrl": null,
+          "options": [
+            { "id": "extra-shot", "name": "샷 추가", "priceDelta": 500 },
+            { "id": "syrup", "name": "시럽 추가", "priceDelta": 0 }
+          ]
+        }
+      ]
+    }
+    ```
+- 주문 생성
+  - Method/Path: `POST /api/orders`
+  - Request Body(예시)
+    ```json
+    {
+      "items": [
+        {
+          "productId": "americano-ice",
+          "selectedOptionIds": ["extra-shot"],
+          "quantity": 1
+        },
+        {
+          "productId": "americano-hot",
+          "selectedOptionIds": [],
+          "quantity": 2
+        }
+      ],
+      "total": 12500
+    }
+    ```
+  - Response(예시)
+    ```json
+    { "orderId": "ord_20250101_0001", "status": "PENDING" }
+    ```
+
+#### 4.1.5 데이터 모델(프런트 기준)
+- `Product`: `{ id, name, price, description?, imageUrl?, options: Option[] }`
+- `Option`: `{ id, name, priceDelta }`
+- `CartItem`: `{ productId, name, selectedOptions: Option[], quantity, unitPrice, lineTotal }`
+- `Cart`: `{ items: CartItem[], total }`
+
+#### 4.1.6 상태 관리/UX
+- 초기 로드 시 메뉴 목록을 가져와 로컬 상태에 저장.
+- 장바구니는 페이지 리프레시 시 소실(MVP). 추후 `localStorage` 영속화 옵션.
+- 토스트 메시지: 담기 성공/실패, 주문 성공/실패.
+- 포커스 이동: 담기 후 장바구니 영역으로 포커스 링 표시(접근성 강화).
+
+#### 4.1.7 접근성(A11y)
+- 버튼에는 시각적 라벨과 함께 스크린리더용 대체 텍스트 제공.
+- 체크박스는 키보드로 탐색 가능해야 함(Tab/Space/Enter).
+- 색 대비 WCAG AA 준수(텍스트 대비 ≥ 4.5:1 권장).
+
+#### 4.1.8 반응형 가이드
+- ≥ 1024px: 3열 그리드(와이어프레임 기준).
+- 600–1023px: 2열.
+- < 600px: 1열, 장바구니는 페이지 하단 전체 폭으로 스택.
+
+#### 4.1.9 성능/품질
+- 이미지 지연 로딩(`loading="lazy"`).
+- 옵션/담기 클릭은 즉시 반응(<= 50ms 체감)하도록 메인 스레드 작업 최소화.
+- API 실패 재시도 1회(지수 백오프 200ms).
+
+#### 4.1.10 예외/제약
+- 재고가 0인 메뉴는 `담기` 비활성화(서버에서 `isAvailable=false` 제공 시).
+- 옵션이 없는 메뉴는 옵션 영역을 숨김.
+- 가격은 정수 원화 기준, 부가세 포함가로 표기.
+
+#### 4.1.11 수용 기준(AC)
+- AC1: 메뉴 목록이 로드되고 각 카드에 이름/가격/담기 버튼이 보인다.
+- AC2: 옵션 선택 후 `담기`를 클릭하면 동일 옵션 조합으로 장바구니 수량이 증가한다.
+- AC3: 장바구니 총 금액이 옵션가를 포함해 정확히 계산된다.
+- AC4: 장바구니가 비어 있으면 `주문하기`가 비활성화된다.
+- AC5: `주문하기` 클릭 시 주문 생성 API가 호출되고 성공 시 성공 메시지가 표시된다.
+
+### 4.2 관리자 화면(PRD)
+
+- **목표**: 주문 흐름을 관리(접수→제조→완료)하고, 각 메뉴의 재고 수량을 실시간으로 조정한다.
+- **대상 사용자**: 매장 직원/관리자.
+- **성공 정의**: 신규 주문이 놓치지 않고 큐에 표시되고, 상태 전환과 재고 변경이 정확히 반영된다.
+
+#### 4.2.1 레이아웃(와이어프레임 기준)
+- **헤더 바**: 좌측 `COZY`, 우측 네비 `주문하기`, `관리자`(현재 강조).
+- **관리자 대시보드 요약(Metrics)**
+  - 텍스트로 카운트 표기: `총 주문`, `주문 접수`, `제조 중`, `제조 완료`.
+  - 값은 실시간 갱신(폴링/푸시 중 택1, MVP는 폴링).
+- **재고 현황(Inventory)**
+  - 제품별 카드 리스트: 메뉴명, 현재 재고 수량, `+`, `-` 버튼.
+  - `-`는 0 미만으로 내려가지 않음(비활성 처리).
+- **주문 현황(Order Queue)**
+  - 시간순 리스트(오래된→최신). 각 라인: `주문 시각`, `항목 요약`, `총액`, 그리고 상태 전환 버튼.
+  - 상태별 버튼 라벨:
+    - NEW(신규): `주문 접수`
+    - ACCEPTED(접수): `제조 시작`
+    - IN_PROGRESS(제조 중): `제조 완료`
+    - DONE(완료): 버튼 없음/비활성 표시
+
+#### 4.2.2 컴포넌트 사양
+- **MetricsBar**
+  - 데이터: `{ total, accepted, inProgress, done }`.
+  - 로딩 시 스켈레톤 표시.
+- **InventoryCard**
+  - 데이터: `productId`, `name`, `stock`.
+  - 상호작용: `+` 클릭 시 `stock + 1`, `-` 클릭 시 `stock - 1(최소 0)`.
+  - 클릭 직후 낙관적 업데이트, 실패 시 롤백 및 토스트.
+- **OrderRow**
+  - 데이터: `orderId`, `createdAt`, `items[]`, `total`, `status`.
+  - 버튼 클릭 시 상태 전환 API 호출. 성공 시 리스트에서 해당 행 상태 업데이트.
+
+#### 4.2.3 동작/로직
+- **주문 상태 머신**
+  - `NEW → ACCEPTED → IN_PROGRESS → DONE`(단방향).
+  - 각 전환 시각을 서버가 기록(감사/통계 용도).
+- **재고 규칙**
+  - 전환 시점: `ACCEPTED` 시 재고 차감(각 제품 수량 합산만큼). 차감 불가(부족) 시 전환 거부.
+  - 관리자 수동 증감은 1회 클릭당 ±1. 최소 0, 최대 999(기본).
+- **실시간 갱신**
+  - MVP: 3초 간격 폴링(`metrics`, `orders`, `stock`).
+  - 향후: 서버 푸시(WebSocket)로 교체 가능.
+- **에러 처리**
+  - API 실패 시 토스트(`요청에 실패했습니다. 잠시 후 다시 시도해 주세요`).
+  - 재고 부족으로 접수 실패 시 명확한 메시지(`재고 부족으로 접수할 수 없습니다`).
+
+#### 4.2.4 API 계약(초안)
+- 메트릭 조회
+  - `GET /api/admin/metrics`
+  - Response 예시
+    ```json
+    { "total": 1, "accepted": 1, "inProgress": 0, "done": 0 }
+    ```
+- 재고 목록 조회
+  - `GET /api/admin/stock`
+  - Response 예시
+    ```json
+    {
+      "items": [
+        { "productId": "americano-ice", "name": "아메리카노(ICE)", "stock": 10 },
+        { "productId": "americano-hot", "name": "아메리카노(HOT)", "stock": 10 }
+      ]
+    }
+    ```
+- 재고 증감
+  - `PATCH /api/admin/stock/:productId`
+  - Request Body: `{ "delta": 1 }` 또는 `{ "delta": -1 }`
+  - Response: `{ "productId": "...", "stock": 11 }`
+- 주문 목록 조회
+  - `GET /api/admin/orders?status=NEW|ACCEPTED|IN_PROGRESS|DONE`
+  - Response 예시
+    ```json
+    {
+      "orders": [
+        {
+          "orderId": "ord_001",
+          "createdAt": "2025-07-31T04:00:00Z",
+          "items": [
+            { "productId": "americano-ice", "name": "아메리카노(ICE)", "selectedOptions": ["샷 추가"], "quantity": 1, "lineTotal": 4500 }
+          ],
+          "total": 4500,
+          "status": "NEW"
+        }
+      ]
+    }
+    ```
+- 상태 전환
+  - `POST /api/admin/orders/:orderId/accept`
+  - `POST /api/admin/orders/:orderId/start`
+  - `POST /api/admin/orders/:orderId/complete`
+  - 공통 Response: `{ "orderId": "...", "status": "ACCEPTED|IN_PROGRESS|DONE" }`
+
+#### 4.2.5 데이터 모델(프런트 기준)
+- `StockItem`: `{ productId, name, stock }`
+- `AdminMetrics`: `{ total, accepted, inProgress, done }`
+- `AdminOrderItem`: `{ productId, name, selectedOptions: string[], quantity, lineTotal }`
+- `AdminOrder`: `{ orderId, createdAt, items: AdminOrderItem[], total, status }`
+
+#### 4.2.6 상태 관리/UX
+- 초기 로드 시 `metrics`, `stock`, `orders?status=NEW` 병렬 요청.
+- 주문 전환 성공 시 메트릭과 주문 리스트를 즉시 갱신(낙관적 업데이트 + 폴링 동기화).
+- 버튼은 요청 중 로딩 인디케이터와 함께 비활성화.
+
+#### 4.2.7 접근성(A11y)
+- `+`, `-`, 상태 전환 버튼에 명확한 `aria-label` 제공.
+- 키보드 조작 가능: Tab 순서 보장, Space/Enter로 클릭.
+- 실시간 변경되는 카운트는 시각적으로만 변하지 않도록 라이브 리전(ARIA live) 사용 고려.
+
+#### 4.2.8 반응형 가이드
+- ≥ 1024px: 3열 재고 그리드, 우측 주문 큐가 세로로 충분히 보이도록.
+- 600–1023px: 2열.
+- < 600px: 1열, 메트릭→재고→주문 순으로 세로 스택.
+
+#### 4.2.9 성능/품질
+- 폴링은 3초(조정 가능). 중복 요청 방지(이전 요청 미완료 시 스킵).
+- 재고 증감은 연타 시 배치 처리 옵션(최대 10회/1초, MVP에서는 즉시 전송).
+
+#### 4.2.10 예외/제약
+- 재고 0인 상품은 사용자측 `담기` 비활성화와 일관되도록 서버가 `isAvailable=false` 제공.
+- 주문이 `DONE`이면 수정 불가.
+
+#### 4.2.11 수용 기준(AC)
+- AC1: 메트릭이 표시되고 3초 주기로 갱신된다.
+- AC2: `+`/`-` 클릭 시 재고 수량이 0 미만으로 내려가지 않으며 서버 반영이 된다.
+- AC3: 신규 주문은 리스트에 표시되고 `주문 접수` 클릭 시 상태가 `ACCEPTED`로 변경된다.
+- AC4: `제조 시작`→`제조 완료` 버튼으로 상태가 순차적으로 변경된다.
+- AC5: 재고 부족 시 `주문 접수`가 실패하고 사용자에게 이유가 안내된다.
