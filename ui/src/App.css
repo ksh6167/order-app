@@ -1,0 +1,83 @@
+* {
+  box-sizing: border-box;
+}
+
+.app {
+  min-height: 100vh;
+  background-color: #fafafa;
+}
+
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  padding-bottom: 250px; /* 장바구니 패널을 위한 여유 공간 */
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.cart-spacer {
+  height: 50px;
+}
+
+.admin-placeholder {
+  text-align: center;
+  padding: 4rem 2rem;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.admin-placeholder h2 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.admin-placeholder p {
+  color: #666;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 1023px) {
+  .menu-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 599px) {
+  .menu-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-content {
+    padding: 1rem;
+    padding-bottom: 300px;
+  }
+}
+
+/* 토스트 애니메이션 */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
