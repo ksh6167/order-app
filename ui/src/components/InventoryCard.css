@@ -1,0 +1,96 @@
+.inventory-card {
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.inventory-header {
+  margin-bottom: 1rem;
+}
+
+.inventory-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.stock-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
+
+.stock-status.normal {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.stock-status.low-stock {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.stock-status.out-of-stock {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.inventory-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.stock-button {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background-color: #2563eb;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.stock-button:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.stock-button:active:not(:disabled) {
+  background-color: #1e40af;
+}
+
+.stock-button:disabled {
+  background-color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.stock-display {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 120px;
+}
+
+.stock-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.stock-unit {
+  font-size: 0.875rem;
+  color: #666;
+}
+

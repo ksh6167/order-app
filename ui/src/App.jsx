@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Header from './components/Header';
 import MenuCard from './components/MenuCard';
 import CartPanel from './components/CartPanel';
+import AdminPage from './pages/AdminPage';
 import './App.css';
 
 // 임시 메뉴 데이터
@@ -71,6 +72,8 @@ const MENU_DATA = [
 function App() {
   const [currentPage, setCurrentPage] = useState('order');
   const [cart, setCart] = useState({ items: [], total: 0 });
+  const [orders, setOrders] = useState([]);
+  const [orderIdCounter, setOrderIdCounter] = useState(1);
 
   // 장바구니에 상품 추가
   const handleAddToCart = (productWithOptions) => {
@@ -160,15 +163,24 @@ function App() {
   const handleOrder = () => {
     if (cart.items.length === 0) return;
     
-    // TODO: 실제 API 호출로 교체
-    console.log('주문 데이터:', {
+    // 새 주문 생성
+    const newOrder = {
+      orderId: String(orderIdCounter).padStart(3, '0'),
+      createdAt: new Date().toISOString(),
       items: cart.items.map(item => ({
         productId: item.productId,
-        selectedOptionIds: item.selectedOptions.map(opt => opt.id),
-        quantity: item.quantity
+        name: item.name,
+        selectedOptions: item.selectedOptions.map(opt => opt.name),
+        quantity: item.quantity,
+        lineTotal: item.lineTotal
       })),
-      total: cart.total
-    });
+      total: cart.total,
+      status: 'NEW'
+    };
+    
+    // 주문 목록에 추가
+    setOrders(prev => [newOrder, ...prev]);
+    setOrderIdCounter(prev => prev + 1);
     
     showToast('주문이 완료되었습니다!');
     
@@ -221,12 +233,18 @@ function App() {
       )}
       
       {currentPage === 'admin' && (
-        <main className="main-content">
-          <div className="admin-placeholder">
-            <h2>관리자 화면</h2>
-            <p>관리자 기능은 추후 구현 예정입니다.</p>
-          </div>
-        </main>
+        <AdminPage 
+          orders={orders}
+          onStatusChange={(orderId, newStatus) => {
+            setOrders(prev =>
+              prev.map(order =>
+                order.orderId === orderId
+                  ? { ...order, status: newStatus }
+                  : order
+              )
+            );
+          }}
+        />
       )}
       
       {currentPage === 'order' && (
