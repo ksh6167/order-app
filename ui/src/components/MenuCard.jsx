@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import './MenuCard.css';
 
-function MenuCard({ product, onAddToCart }) {
+function MenuCard({ product, stock, onAddToCart }) {
   const [selectedOptions, setSelectedOptions] = useState([]);
+  const isOutOfStock = stock === 0;
 
   const handleOptionChange = (option, checked) => {
     if (checked) {
@@ -31,7 +32,10 @@ function MenuCard({ product, onAddToCart }) {
         </div>
       </div>
       <div className="menu-info">
-        <h3 className="menu-name">{product.name}</h3>
+        <div className="menu-header-info">
+          <h3 className="menu-name">{product.name}</h3>
+          {isOutOfStock && <span className="out-of-stock-badge">품절</span>}
+        </div>
         <p className="menu-price">{product.price.toLocaleString()}원</p>
         <p className="menu-description">{product.description}</p>
         
@@ -50,8 +54,12 @@ function MenuCard({ product, onAddToCart }) {
           </div>
         )}
         
-        <button className="add-button" onClick={handleAddToCart}>
-          담기
+        <button 
+          className="add-button" 
+          onClick={handleAddToCart}
+          disabled={isOutOfStock}
+        >
+          {isOutOfStock ? '품절' : '담기'}
         </button>
       </div>
     </div>

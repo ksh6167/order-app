@@ -288,3 +288,605 @@
 - AC3: 신규 주문은 리스트에 표시되고 `주문 접수` 클릭 시 상태가 `ACCEPTED`로 변경된다.
 - AC4: `제조 시작`→`제조 완료` 버튼으로 상태가 순차적으로 변경된다.
 - AC5: 재고 부족 시 `주문 접수`가 실패하고 사용자에게 이유가 안내된다.
+
+---
+
+## 5. 백엔드 사양
+
+### 5.1 백엔드 개요
+
+- **목표**: 커피 주문 앱의 메뉴, 옵션, 주문, 재고 데이터를 안정적으로 관리하고 REST API를 제공한다.
+- **기술 스택**: Node.js, Express, PostgreSQL
+- **데이터베이스**: PostgreSQL을 사용하여 데이터 영속성 확보
+
+### 5.2 데이터 모델
+
+#### 5.2.1 테이블 구조
+
+##### Menus (메뉴)
+커피 메뉴 정보를 저장하는 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| id | VARCHAR(50) | PRIMARY KEY | 메뉴 고유 식별자 (예: 'americano-ice') |
+| name | VARCHAR(100) | NOT NULL | 메뉴명 (예: '아메리카노(ICE)') |
+| description | TEXT | | 메뉴 설명 |
+| price | INTEGER | NOT NULL, CHECK (price >= 0) | 기본 가격 (원 단위) |
+| image_url | VARCHAR(255) | | 메뉴 이미지 URL |
+| stock | INTEGER | NOT NULL, DEFAULT 0, CHECK (stock >= 0) | 현재 재고 수량 |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시각 |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 수정 시각 |
+
+##### Options (옵션)
+메뉴에 추가 가능한 옵션 정보를 저장하는 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| id | VARCHAR(50) | PRIMARY KEY | 옵션 고유 식별자 (예: 'extra-shot') |
+| name | VARCHAR(100) | NOT NULL | 옵션명 (예: '샷 추가') |
+| price_delta | INTEGER | NOT NULL, DEFAULT 0 | 추가 가격 (원 단위, 음수 가능) |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 생성 시각 |
+
+##### MenuOptions (메뉴-옵션 연결)
+메뉴와 옵션의 다대다 관계를 관리하는 중간 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| menu_id | VARCHAR(50) | FOREIGN KEY (Menus.id) | 메뉴 ID |
+| option_id | VARCHAR(50) | FOREIGN KEY (Options.id) | 옵션 ID |
+
+- PRIMARY KEY: (menu_id, option_id)
+- ON DELETE CASCADE: 메뉴 또는 옵션 삭제 시 연결도 자동 삭제
+
+##### Orders (주문)
+고객의 주문 정보를 저장하는 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| id | SERIAL | PRIMARY KEY | 주문 고유 번호 (자동 증가) |
+| order_id | VARCHAR(50) | UNIQUE, NOT NULL | 주문 식별자 (예: '001', '002') |
+| total | INTEGER | NOT NULL, CHECK (total >= 0) | 총 주문 금액 (원 단위) |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'NEW' | 주문 상태 (NEW, ACCEPTED, IN_PROGRESS, DONE) |
+| created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 주문 생성 시각 |
+| updated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 주문 수정 시각 |
+
+##### OrderItems (주문 항목)
+주문에 포함된 개별 메뉴 항목을 저장하는 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| id | SERIAL | PRIMARY KEY | 항목 고유 번호 |
+| order_id | INTEGER | FOREIGN KEY (Orders.id) ON DELETE CASCADE | 주문 ID |
+| product_id | VARCHAR(50) | NOT NULL | 메뉴 ID (Menus.id 참조) |
+| product_name | VARCHAR(100) | NOT NULL | 메뉴명 (스냅샷) |
+| quantity | INTEGER | NOT NULL, CHECK (quantity > 0) | 수량 |
+| unit_price | INTEGER | NOT NULL | 단위 가격 (옵션 포함) |
+| line_total | INTEGER | NOT NULL | 라인 총액 (unit_price × quantity) |
+
+##### OrderItemOptions (주문 항목 옵션)
+주문 항목에 선택된 옵션을 저장하는 테이블
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+|--------|------|----------|------|
+| id | SERIAL | PRIMARY KEY | 고유 번호 |
+| order_item_id | INTEGER | FOREIGN KEY (OrderItems.id) ON DELETE CASCADE | 주문 항목 ID |
+| option_name | VARCHAR(100) | NOT NULL | 옵션명 (스냅샷) |
+
+#### 5.2.2 데이터 관계도
+```
+Menus ──┬─< MenuOptions >─┬── Options
+        │                  
+        └── (참조) OrderItems
+        
+Orders ──< OrderItems ──< OrderItemOptions
+```
+
+### 5.3 사용자 흐름 (데이터 관점)
+
+#### 흐름 1: 메뉴 목록 조회
+1. 사용자가 "주문하기" 탭 진입
+2. 프론트엔드 → `GET /api/menu` 요청
+3. 백엔드: Menus 테이블과 관련 Options 조회
+4. 프론트엔드: 메뉴 목록 화면에 표시
+5. 관리자 화면: Menus의 stock 정보를 "재고 현황"에 표시
+
+#### 흐름 2: 주문 생성
+1. 사용자가 장바구니에서 "주문하기" 클릭
+2. 프론트엔드 → `POST /api/orders` 요청 (메뉴, 수량, 옵션, 금액)
+3. 백엔드: 트랜잭션 시작
+   - Orders 테이블에 주문 생성
+   - OrderItems 테이블에 주문 항목 생성
+   - OrderItemOptions 테이블에 옵션 정보 저장
+4. 백엔드: 트랜잭션 커밋
+5. 프론트엔드: 주문 완료 메시지 표시
+
+#### 흐름 3: 주문 상태 관리
+1. 관리자가 "관리자" 탭 진입
+2. 프론트엔드 → `GET /api/admin/orders` 요청
+3. 백엔드: Orders와 OrderItems 조인하여 조회
+4. 관리자 화면: "주문 현황"에 표시
+5. 관리자가 "주문 접수" 클릭
+6. 프론트엔드 → `POST /api/admin/orders/:orderId/accept` 요청
+7. 백엔드: 
+   - 재고 확인 (Menus.stock)
+   - 재고 충분 → Orders.status = 'ACCEPTED', Menus.stock 차감
+   - 재고 부족 → 에러 반환
+8. 프론트엔드: 상태 업데이트 또는 에러 메시지 표시
+
+#### 흐름 4: 재고 관리
+1. 관리자가 재고 증감 버튼(+/-) 클릭
+2. 프론트엔드 → `PATCH /api/admin/stock/:productId` 요청
+3. 백엔드: Menus.stock 값 업데이트
+4. 프론트엔드: 재고 수량 즉시 반영
+
+### 5.4 API 설계
+
+#### 5.4.1 메뉴 관련 API
+
+##### GET /api/menu
+메뉴 목록 조회 (옵션 포함)
+
+**요청**
+- Method: GET
+- Path: `/api/menu`
+- Query Parameters: 없음
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "items": [
+    {
+      "id": "americano-ice",
+      "name": "아메리카노(ICE)",
+      "price": 4000,
+      "description": "깊고 진한 에스프레소에 시원한 얼음을 더한 클래식 커피",
+      "imageUrl": null,
+      "stock": 15,
+      "options": [
+        {
+          "id": "extra-shot",
+          "name": "샷 추가",
+          "priceDelta": 500
+        },
+        {
+          "id": "syrup",
+          "name": "시럽 추가",
+          "priceDelta": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+**에러 응답**
+- 500: 서버 내부 오류
+
+#### 5.4.2 주문 관련 API
+
+##### POST /api/orders
+새 주문 생성
+
+**요청**
+- Method: POST
+- Path: `/api/orders`
+- Body:
+```json
+{
+  "items": [
+    {
+      "productId": "americano-ice",
+      "selectedOptionIds": ["extra-shot"],
+      "quantity": 1
+    },
+    {
+      "productId": "caffe-latte",
+      "selectedOptionIds": [],
+      "quantity": 2
+    }
+  ],
+  "total": 14500
+}
+```
+
+**응답**
+- Status: 201 Created
+- Body:
+```json
+{
+  "orderId": "001",
+  "status": "NEW",
+  "createdAt": "2025-10-21T10:30:00.000Z"
+}
+```
+
+**에러 응답**
+- 400: 잘못된 요청 데이터
+- 500: 서버 내부 오류
+
+**처리 로직**
+1. 트랜잭션 시작
+2. Orders 테이블에 주문 생성
+3. 각 항목에 대해:
+   - Menus 테이블에서 가격 정보 조회
+   - Options 테이블에서 옵션 가격 조회
+   - 단위 가격 계산 (기본 가격 + 옵션 가격)
+   - OrderItems에 저장
+   - OrderItemOptions에 옵션 저장
+4. 트랜잭션 커밋
+
+##### GET /api/orders/:orderId
+특정 주문 조회
+
+**요청**
+- Method: GET
+- Path: `/api/orders/:orderId`
+- Parameters: orderId (주문 ID)
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "orderId": "001",
+  "createdAt": "2025-10-21T10:30:00.000Z",
+  "items": [
+    {
+      "productId": "americano-ice",
+      "name": "아메리카노(ICE)",
+      "selectedOptions": ["샷 추가"],
+      "quantity": 1,
+      "lineTotal": 4500
+    }
+  ],
+  "total": 14500,
+  "status": "NEW"
+}
+```
+
+**에러 응답**
+- 404: 주문을 찾을 수 없음
+- 500: 서버 내부 오류
+
+#### 5.4.3 관리자 API
+
+##### GET /api/admin/metrics
+관리자 대시보드 메트릭 조회
+
+**요청**
+- Method: GET
+- Path: `/api/admin/metrics`
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "total": 10,
+  "accepted": 3,
+  "inProgress": 2,
+  "done": 5
+}
+```
+
+##### GET /api/admin/stock
+재고 목록 조회
+
+**요청**
+- Method: GET
+- Path: `/api/admin/stock`
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "items": [
+    {
+      "productId": "americano-ice",
+      "name": "아메리카노(ICE)",
+      "stock": 15
+    },
+    {
+      "productId": "americano-hot",
+      "name": "아메리카노(HOT)",
+      "stock": 15
+    }
+  ]
+}
+```
+
+##### PATCH /api/admin/stock/:productId
+재고 수량 수정
+
+**요청**
+- Method: PATCH
+- Path: `/api/admin/stock/:productId`
+- Body:
+```json
+{
+  "delta": 1
+}
+```
+또는
+```json
+{
+  "delta": -1
+}
+```
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "productId": "americano-ice",
+  "stock": 16
+}
+```
+
+**에러 응답**
+- 400: delta가 누락되었거나 잘못된 값
+- 404: 메뉴를 찾을 수 없음
+- 409: 재고가 0 미만으로 떨어질 수 없음
+- 500: 서버 내부 오류
+
+**처리 로직**
+1. Menus 테이블에서 현재 재고 조회
+2. 새 재고 = 현재 재고 + delta
+3. 새 재고 < 0이면 에러 반환
+4. 새 재고 > 999이면 999로 제한
+5. Menus.stock 업데이트
+
+##### GET /api/admin/orders
+주문 목록 조회
+
+**요청**
+- Method: GET
+- Path: `/api/admin/orders`
+- Query Parameters:
+  - status (optional): NEW, ACCEPTED, IN_PROGRESS, DONE
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "orders": [
+    {
+      "orderId": "001",
+      "createdAt": "2025-10-21T10:30:00.000Z",
+      "items": [
+        {
+          "productId": "americano-ice",
+          "name": "아메리카노(ICE)",
+          "selectedOptions": ["샷 추가"],
+          "quantity": 1,
+          "lineTotal": 4500
+        }
+      ],
+      "total": 14500,
+      "status": "NEW"
+    }
+  ]
+}
+```
+
+##### POST /api/admin/orders/:orderId/accept
+주문 접수 (NEW → ACCEPTED)
+
+**요청**
+- Method: POST
+- Path: `/api/admin/orders/:orderId/accept`
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "orderId": "001",
+  "status": "ACCEPTED"
+}
+```
+
+**에러 응답**
+- 400: 이미 접수된 주문이거나 상태 전환 불가
+- 404: 주문을 찾을 수 없음
+- 409: 재고 부족
+- 500: 서버 내부 오류
+
+**처리 로직**
+1. 트랜잭션 시작
+2. 주문 상태 확인 (status = 'NEW')
+3. 주문 항목별 재고 확인
+4. 재고 부족 시 → 409 에러 반환 및 롤백
+5. 재고 충분 시:
+   - Orders.status = 'ACCEPTED'
+   - Menus.stock 차감 (각 항목의 수량만큼)
+6. 트랜잭션 커밋
+
+##### POST /api/admin/orders/:orderId/start
+제조 시작 (ACCEPTED → IN_PROGRESS)
+
+**요청**
+- Method: POST
+- Path: `/api/admin/orders/:orderId/start`
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "orderId": "001",
+  "status": "IN_PROGRESS"
+}
+```
+
+##### POST /api/admin/orders/:orderId/complete
+제조 완료 (IN_PROGRESS → DONE)
+
+**요청**
+- Method: POST
+- Path: `/api/admin/orders/:orderId/complete`
+
+**응답**
+- Status: 200 OK
+- Body:
+```json
+{
+  "orderId": "001",
+  "status": "DONE"
+}
+```
+
+### 5.5 데이터베이스 설정
+
+#### 5.5.1 초기 데이터 (Seed Data)
+
+##### Menus
+```sql
+INSERT INTO menus (id, name, description, price, stock) VALUES
+('americano-ice', '아메리카노(ICE)', '깊고 진한 에스프레소에 시원한 얼음을 더한 클래식 커피', 4000, 15),
+('americano-hot', '아메리카노(HOT)', '진한 에스프레소 샷에 뜨거운 물을 더한 따뜻한 커피', 4000, 15),
+('caffe-latte', '카페라떼', '부드러운 스팀 우유와 에스프레소가 어우러진 인기 메뉴', 5000, 10),
+('cappuccino', '카푸치노', '부드러운 우유 거품과 에스프레소의 완벽한 조화', 5000, 8),
+('vanilla-latte', '바닐라 라떼', '달콤한 바닐라 시럽과 부드러운 우유가 어우러진 라떼', 5500, 3),
+('caramel-macchiato', '캬라멜 마키아또', '달콤한 캬라멜 드리즐과 에스프레소의 환상적인 조합', 6000, 0);
+```
+
+##### Options
+```sql
+INSERT INTO options (id, name, price_delta) VALUES
+('extra-shot', '샷 추가', 500),
+('syrup', '시럽 추가', 0),
+('cinnamon', '시나몬 추가', 0),
+('whipped-cream', '휘핑크림 추가', 500),
+('extra-caramel', '캬라멜 시럽 추가', 500);
+```
+
+##### MenuOptions
+```sql
+INSERT INTO menu_options (menu_id, option_id) VALUES
+('americano-ice', 'extra-shot'),
+('americano-ice', 'syrup'),
+('americano-hot', 'extra-shot'),
+('americano-hot', 'syrup'),
+('caffe-latte', 'extra-shot'),
+('caffe-latte', 'syrup'),
+('cappuccino', 'extra-shot'),
+('cappuccino', 'cinnamon'),
+('vanilla-latte', 'extra-shot'),
+('vanilla-latte', 'whipped-cream'),
+('caramel-macchiato', 'extra-shot'),
+('caramel-macchiato', 'extra-caramel');
+```
+
+### 5.6 기술 요구사항
+
+#### 5.6.1 서버 환경
+- Node.js: v18.x 이상
+- Express: v4.x
+- PostgreSQL: v14.x 이상
+
+#### 5.6.2 필수 npm 패키지
+- express: 웹 프레임워크
+- pg: PostgreSQL 클라이언트
+- dotenv: 환경 변수 관리
+- cors: CORS 처리
+- body-parser: 요청 본문 파싱
+
+#### 5.6.3 프로젝트 구조
+```
+backend/
+├── src/
+│   ├── config/
+│   │   └── database.js       # DB 연결 설정
+│   ├── routes/
+│   │   ├── menu.js           # 메뉴 라우트
+│   │   ├── orders.js         # 주문 라우트
+│   │   └── admin.js          # 관리자 라우트
+│   ├── controllers/
+│   │   ├── menuController.js
+│   │   ├── orderController.js
+│   │   └── adminController.js
+│   ├── models/
+│   │   ├── Menu.js
+│   │   ├── Order.js
+│   │   └── Stock.js
+│   └── app.js                # Express 앱 설정
+├── scripts/
+│   └── init-db.sql           # DB 스키마 및 시드 데이터
+├── .env                      # 환경 변수
+├── package.json
+└── server.js                 # 서버 진입점
+```
+
+### 5.7 보안 및 검증
+
+#### 5.7.1 입력 검증
+- 모든 API 요청 데이터 유효성 검사
+- SQL Injection 방지 (파라미터화된 쿼리 사용)
+- XSS 방지 (입력 값 이스케이프)
+
+#### 5.7.2 에러 처리
+- 모든 API는 일관된 에러 응답 형식 사용
+```json
+{
+  "error": {
+    "code": "STOCK_INSUFFICIENT",
+    "message": "재고 부족: 아메리카노(ICE)의 재고가 부족합니다"
+  }
+}
+```
+
+#### 5.7.3 트랜잭션 관리
+- 주문 생성 시 트랜잭션 사용
+- 주문 접수 + 재고 차감 시 트랜잭션 사용
+- 실패 시 자동 롤백
+
+### 5.8 성능 최적화
+
+#### 5.8.1 데이터베이스 인덱스
+```sql
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+```
+
+#### 5.8.2 쿼리 최적화
+- JOIN 쿼리 최소화
+- 필요한 컬럼만 SELECT
+- N+1 문제 방지 (관련 데이터 한 번에 조회)
+
+### 5.9 개발 가이드
+
+#### 5.9.1 환경 변수 (.env)
+```
+PORT=3000
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=coffee_order_db
+DB_USER=postgres
+DB_PASSWORD=your_password
+NODE_ENV=development
+```
+
+#### 5.9.2 API 테스트
+- 각 API 엔드포인트에 대한 단위 테스트
+- 통합 테스트 (주문 생성 → 재고 차감 흐름)
+- 에러 케이스 테스트
+
+### 5.10 배포 고려사항
+
+#### 5.10.1 프로덕션 설정
+- 환경 변수로 DB 연결 정보 관리
+- 로깅 시스템 구축 (winston 등)
+- HTTPS 적용
+- Rate Limiting 적용
+
+#### 5.10.2 모니터링
+- API 응답 시간 모니터링
+- DB 연결 풀 상태 모니터링
+- 에러 로그 수집 및 알림

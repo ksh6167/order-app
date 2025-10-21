@@ -3,15 +3,16 @@ import Header from './components/Header';
 import MenuCard from './components/MenuCard';
 import CartPanel from './components/CartPanel';
 import AdminPage from './pages/AdminPage';
+import Toast from './components/Toast';
 import './App.css';
 
-// 임시 메뉴 데이터
+// 메뉴 데이터
 const MENU_DATA = [
   {
     id: 'americano-ice',
     name: '아메리카노(ICE)',
     price: 4000,
-    description: '간단한 설명...',
+    description: '깊고 진한 에스프레소에 시원한 얼음을 더한 클래식 커피',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'syrup', name: '시럽 추가', priceDelta: 0 }
@@ -21,7 +22,7 @@ const MENU_DATA = [
     id: 'americano-hot',
     name: '아메리카노(HOT)',
     price: 4000,
-    description: '간단한 설명...',
+    description: '진한 에스프레소 샷에 뜨거운 물을 더한 따뜻한 커피',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'syrup', name: '시럽 추가', priceDelta: 0 }
@@ -31,7 +32,7 @@ const MENU_DATA = [
     id: 'caffe-latte',
     name: '카페라떼',
     price: 5000,
-    description: '간단한 설명...',
+    description: '부드러운 스팀 우유와 에스프레소가 어우러진 인기 메뉴',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'syrup', name: '시럽 추가', priceDelta: 0 }
@@ -41,7 +42,7 @@ const MENU_DATA = [
     id: 'cappuccino',
     name: '카푸치노',
     price: 5000,
-    description: '부드러운 우유 거품과 에스프레소의 조화',
+    description: '부드러운 우유 거품과 에스프레소의 완벽한 조화',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'cinnamon', name: '시나몬 추가', priceDelta: 0 }
@@ -51,7 +52,7 @@ const MENU_DATA = [
     id: 'vanilla-latte',
     name: '바닐라 라떼',
     price: 5500,
-    description: '달콤한 바닐라 시럽이 들어간 라떼',
+    description: '달콤한 바닐라 시럽과 부드러운 우유가 어우러진 라떼',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'whipped-cream', name: '휘핑크림 추가', priceDelta: 500 }
@@ -61,7 +62,7 @@ const MENU_DATA = [
     id: 'caramel-macchiato',
     name: '캬라멜 마키아또',
     price: 6000,
-    description: '달콤한 캬라멜과 에스프레소의 완벽한 조화',
+    description: '달콤한 캬라멜 드리즐과 에스프레소의 환상적인 조합',
     options: [
       { id: 'extra-shot', name: '샷 추가', priceDelta: 500 },
       { id: 'extra-caramel', name: '캬라멜 시럽 추가', priceDelta: 500 }
@@ -69,11 +70,23 @@ const MENU_DATA = [
   }
 ];
 
+// 초기 재고 데이터
+const INITIAL_INVENTORY = [
+  { productId: 'americano-ice', name: '아메리카노(ICE)', stock: 15 },
+  { productId: 'americano-hot', name: '아메리카노(HOT)', stock: 15 },
+  { productId: 'caffe-latte', name: '카페라떼', stock: 10 },
+  { productId: 'cappuccino', name: '카푸치노', stock: 8 },
+  { productId: 'vanilla-latte', name: '바닐라 라떼', stock: 3 },
+  { productId: 'caramel-macchiato', name: '캬라멜 마키아또', stock: 0 }
+];
+
 function App() {
   const [currentPage, setCurrentPage] = useState('order');
   const [cart, setCart] = useState({ items: [], total: 0 });
   const [orders, setOrders] = useState([]);
   const [orderIdCounter, setOrderIdCounter] = useState(1);
+  const [inventory, setInventory] = useState(INITIAL_INVENTORY);
+  const [toastMessage, setToastMessage] = useState(null);
 
   // 장바구니에 상품 추가
   const handleAddToCart = (productWithOptions) => {
@@ -178,8 +191,8 @@ function App() {
       status: 'NEW'
     };
     
-    // 주문 목록에 추가
-    setOrders(prev => [newOrder, ...prev]);
+    // 주문 목록에 추가 (오래된 순서로 정렬되도록 끝에 추가)
+    setOrders(prev => [...prev, newOrder]);
     setOrderIdCounter(prev => prev + 1);
     
     showToast('주문이 완료되었습니다!');
@@ -188,29 +201,65 @@ function App() {
     setCart({ items: [], total: 0 });
   };
 
-  // 간단한 토스트 메시지 (임시)
+  // 재고 업데이트
+  const handleUpdateStock = (productId, delta) => {
+    setInventory(prev => 
+      prev.map(item => 
+        item.productId === productId 
+          ? { ...item, stock: Math.max(0, Math.min(999, item.stock + delta)) }
+          : item
+      )
+    );
+  };
+
+  // 주문 상태 변경 (재고 차감 포함)
+  const handleStatusChange = (orderId, newStatus) => {
+    const order = orders.find(o => o.orderId === orderId);
+    if (!order) return;
+
+    // ACCEPTED로 변경 시 재고 차감
+    if (newStatus === 'ACCEPTED') {
+      // 재고 확인
+      let hasEnoughStock = true;
+      const stockChanges = {};
+
+      for (const item of order.items) {
+        const currentStock = inventory.find(inv => inv.productId === item.productId);
+        if (!currentStock || currentStock.stock < item.quantity) {
+          hasEnoughStock = false;
+          showToast(`재고 부족: ${item.name}의 재고가 부족합니다`);
+          return;
+        }
+        stockChanges[item.productId] = (stockChanges[item.productId] || 0) + item.quantity;
+      }
+
+      if (!hasEnoughStock) return;
+
+      // 재고 차감
+      setInventory(prev =>
+        prev.map(item =>
+          stockChanges[item.productId]
+            ? { ...item, stock: item.stock - stockChanges[item.productId] }
+            : item
+        )
+      );
+    }
+
+    // 주문 상태 변경
+    setOrders(prev =>
+      prev.map(order =>
+        order.orderId === orderId
+          ? { ...order, status: newStatus }
+          : order
+      )
+    );
+
+    showToast('상태가 변경되었습니다');
+  };
+
+  // 토스트 메시지 표시
   const showToast = (message) => {
-    // 실제로는 Toast 컴포넌트를 사용하는 것이 좋습니다
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background-color: #2563eb;
-      color: white;
-      padding: 1rem 1.5rem;
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      z-index: 1000;
-      animation: slideIn 0.3s ease-out;
-    `;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.style.animation = 'slideOut 0.3s ease-in';
-      setTimeout(() => document.body.removeChild(toast), 300);
-    }, 2000);
+    setToastMessage(message);
   };
 
   return (
@@ -220,13 +269,17 @@ function App() {
       {currentPage === 'order' && (
         <main className="main-content">
           <div className="menu-grid">
-            {MENU_DATA.map(product => (
-              <MenuCard
-                key={product.id}
-                product={product}
-                onAddToCart={handleAddToCart}
-              />
-            ))}
+            {MENU_DATA.map(product => {
+              const stock = inventory.find(inv => inv.productId === product.id);
+              return (
+                <MenuCard
+                  key={product.id}
+                  product={product}
+                  stock={stock?.stock || 0}
+                  onAddToCart={handleAddToCart}
+                />
+              );
+            })}
           </div>
           <div className="cart-spacer" />
         </main>
@@ -235,15 +288,9 @@ function App() {
       {currentPage === 'admin' && (
         <AdminPage 
           orders={orders}
-          onStatusChange={(orderId, newStatus) => {
-            setOrders(prev =>
-              prev.map(order =>
-                order.orderId === orderId
-                  ? { ...order, status: newStatus }
-                  : order
-              )
-            );
-          }}
+          inventory={inventory}
+          onStatusChange={handleStatusChange}
+          onUpdateStock={handleUpdateStock}
         />
       )}
       
@@ -254,6 +301,13 @@ function App() {
           onIncreaseQuantity={handleIncreaseQuantity}
           onDecreaseQuantity={handleDecreaseQuantity}
           onOrder={handleOrder}
+        />
+      )}
+      
+      {toastMessage && (
+        <Toast 
+          message={toastMessage} 
+          onClose={() => setToastMessage(null)} 
         />
       )}
     </div>
