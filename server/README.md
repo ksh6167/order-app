@@ -1,6 +1,6 @@
 # Coffee Order API Server
 
-커피 주문 앱의 백엔드 API 서버입니다.
+커피 주문 앱의 백엔드 서버입니다.
 
 ## 기술 스택
 
@@ -12,49 +12,58 @@
 
 ### 1. 환경 변수 설정
 
-`.env` 파일을 수정하여 데이터베이스 연결 정보를 입력하세요.
-
-```env
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=coffee_order_db
-DB_USER=postgres
-DB_PASSWORD=your_password
-```
-
-### 2. 데이터베이스 설정
-
-PostgreSQL 데이터베이스를 생성하고 스키마를 초기화하세요.
+`.env.example` 파일을 `.env`로 복사하고 데이터베이스 정보를 설정하세요.
 
 ```bash
-# 데이터베이스 생성
+cp .env.example .env
+```
+
+### 2. 패키지 설치
+
+```bash
+npm install
+```
+
+### 3. 데이터베이스 초기화
+
+PostgreSQL이 설치되어 있어야 합니다.
+
+```bash
+# PostgreSQL 데이터베이스 생성
 createdb coffee_order_db
 
-# 스키마 초기화 (추후 scripts/init-db.sql 실행)
-psql -d coffee_order_db -f scripts/init-db.sql
+# 스키마 및 시드 데이터 실행
+psql -U postgres -d coffee_order_db -f scripts/init-db.sql
 ```
 
-### 3. 서버 실행
+### 4. 서버 실행
 
+개발 모드 (nodemon 사용):
 ```bash
-# 개발 모드 (nodemon 사용)
 npm run dev
+```
 
-# 프로덕션 모드
+프로덕션 모드:
+```bash
 npm start
 ```
 
+서버는 기본적으로 `http://localhost:3000`에서 실행됩니다.
+
 ## API 엔드포인트
 
-### 메뉴 관련
+### 메뉴
+
 - `GET /api/menu` - 메뉴 목록 조회
 
-### 주문 관련
+### 주문
+
 - `POST /api/orders` - 주문 생성
 - `GET /api/orders/:orderId` - 주문 조회
 
-### 관리자 관련
-- `GET /api/admin/metrics` - 메트릭 조회
+### 관리자
+
+- `GET /api/admin/metrics` - 대시보드 메트릭
 - `GET /api/admin/stock` - 재고 목록 조회
 - `PATCH /api/admin/stock/:productId` - 재고 수정
 - `GET /api/admin/orders` - 주문 목록 조회
@@ -77,18 +86,22 @@ server/
 │   │   ├── menuController.js
 │   │   ├── orderController.js
 │   │   └── adminController.js
-│   ├── models/               # (추후 추가)
+│   ├── models/
+│   │   ├── Menu.js
+│   │   └── Order.js
 │   └── app.js                # Express 앱 설정
 ├── scripts/
-│   └── init-db.sql           # DB 스키마 및 시드 데이터
-├── .env                      # 환경 변수
-├── .gitignore
+│   └── init-db.sql           # DB 초기화 스크립트
+├── .env                      # 환경 변수 (git에 포함되지 않음)
+├── .env.example              # 환경 변수 템플릿
 ├── package.json
-├── server.js                 # 서버 진입점
-└── README.md
+└── server.js                 # 서버 진입점
 ```
 
-## 개발 상태
+## 헬스 체크
 
-현재 기본 구조만 설정되어 있으며, 각 컨트롤러의 TODO 부분을 구현해야 합니다.
+서버 상태 확인:
+```bash
+curl http://localhost:3000/health
+```
 
