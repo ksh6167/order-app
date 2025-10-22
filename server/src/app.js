@@ -4,7 +4,14 @@ const cors = require('cors');
 const app = express();
 
 // Middleware
-app.use(cors());
+// CORS 설정 - 프로덕션 환경에서 프론트엔드 도메인 허용
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production'
+    ? [process.env.FRONTEND_URL || 'https://coffee-order-app.onrender.com']
+    : ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
