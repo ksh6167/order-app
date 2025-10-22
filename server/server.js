@@ -1,11 +1,16 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// .env 파일 경로 명시 (로컬 개발 환경)
-if (process.env.NODE_ENV !== 'production') {
-  const envPath = path.resolve(__dirname, '.env');
-  dotenv.config({ path: envPath });
-}
+// .env 파일 경로 명시
+const envPath = path.resolve(__dirname, '.env');
+const result = dotenv.config({ path: envPath });
+
+console.log('🔍 Environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  DATABASE_URL: process.env.DATABASE_URL ? 'Set (Render DB)' : 'Not set',
+  DB_HOST: process.env.DB_HOST || 'localhost',
+  EnvFileLoaded: result.error ? 'Failed' : 'Success'
+});
 
 const app = require('./src/app');
 
